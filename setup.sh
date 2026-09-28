@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # Install the pinned Emscripten SDK and Pumpkin sources under .work and apply
 # the patches under patches/.
-source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORK="$REPO/.work"
+EMSDK_VERSION=6.0.10
+EMSDK="$WORK/emsdk"
+EMSCRIPTEN="$EMSDK/upstream/emscripten"
+PUMPKIN_COMMIT=b5b9b9d7010e793806a83c495af223c67e1d35ee
 
 mkdir -p "$WORK"
 
@@ -41,7 +48,7 @@ if [ ! -f "$PUMPKIN/.patched" ]; then
 fi
 
 NODE_JS="$(ls -d "$EMSDK"/node/*/bin/node | head -n1)"
-cat > "$EM_CONFIG" <<EOF
+cat > "$WORK/emscripten.config" <<EOF
 LLVM_ROOT = '$EMSDK/upstream/bin'
 BINARYEN_ROOT = '$EMSDK/upstream'
 NODE_JS = '$NODE_JS'

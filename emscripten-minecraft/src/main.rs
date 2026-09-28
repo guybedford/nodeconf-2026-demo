@@ -8,15 +8,14 @@ mod config;
 mod settings;
 
 use pumpkin::{data::VanillaData, PumpkinServer};
-use std::cell::Cell;
 use tokio::runtime::{Builder, LocalEventLoop};
 
 thread_local! {
-    static EVENT_LOOP: Cell<Option<&'static LocalEventLoop>> = const { Cell::new(None) };
-}
-
-fn event_loop() -> &'static LocalEventLoop {
-    EVENT_LOOP.with(|slot| slot.get().expect("event loop not started"))
+    // Outlives `main`: the drives it schedules on the host run the server.
+    static EVENT_LOOP: LocalEventLoop = Builder::new_current_thread()
+        .enable_all()
+        .build_hosted_local_event_loop(Default::default())
+        .expect("tokio event loop");
 }
 
 extern "C" {
@@ -31,25 +30,18 @@ fn run_js(script: &str) {
 
 fn main() {
     std::panic::set_hook(Box::new(|info| eprintln!("RUST PANIC: {info}")));
-    // The event loop outlives `main`: the drives it schedules on the host are
-    // what run the server.
-    let el: &'static LocalEventLoop = Box::leak(Box::new(
-        Builder::new_current_thread()
-            .enable_all()
-            .build_hosted_local_event_loop(Default::default())
-            .expect("tokio event loop"),
-    ));
-    EVENT_LOOP.with(|slot| slot.set(Some(el)));
     // There are no Rayon workers: spawned jobs wait until this thread yields
     // to Rayon. A wake fires once per idle-to-pending transition, so the
     // driver runs jobs until the queue is idle, one per turn of the event
     // loop, and stops until the next wake.
     let _ = rayon::set_fallback_wake_hook(drive_rayon);
-    el.spawn_local(async {
-        if let Err(error) = run().await {
-            eprintln!("error: {error}");
-            std::process::exit(1);
-        }
+    EVENT_LOOP.with(|el| {
+        el.spawn_local(async {
+            if let Err(error) = run().await {
+                eprintln!("error: {error}");
+                std::process::exit(1);
+            }
+        })
     });
     // Ctrl+C stops the server, which saves and exits; a second one is forced.
     run_js(
@@ -92,9 +84,11 @@ async fn run() -> Result<(), String> {
 /// Runs one queued Rayon job per turn of the event loop until the fallback
 /// queue is idle.
 fn drive_rayon() {
-    event_loop().spawn_local(async {
-        if rayon::yield_now() == Some(rayon::Yield::Executed) {
-            drive_rayon();
-        }
+    EVENT_LOOP.with(|el| {
+        el.spawn_local(async {
+            if rayon::yield_now() == Some(rayon::Yield::Executed) {
+                drive_rayon();
+            }
+        })
     });
 }

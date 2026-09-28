@@ -2,7 +2,8 @@
   "name": "emscripten-minecraft",
   "private": true,
   "scripts": {
-    "build": "bash ../scripts/build.sh emscripten-minecraft",
-    "start": "node build/emscripten-minecraft.js"
+    "build": "cargo build --release",
+    "start": "node target/wasm32-unknown-emscripten/release/emscripten-minecraft.js",
+    "start:inspect": "node --inspect target/wasm32-unknown-emscripten/release/emscripten-minecraft.js"
   }
 }

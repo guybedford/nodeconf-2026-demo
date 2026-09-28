@@ -5,6 +5,6 @@
     "node": ">=22"
   },
   "scripts": {
-    "setup": "bash scripts/setup.sh"
+    "setup": "bash setup.sh"
   }
 }

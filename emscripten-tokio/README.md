@@ -10,7 +10,7 @@ npm run start
 ```
 
 The first build installs the pinned Emscripten SDK into `../.work` and applies
-the patches in `../patches/emscripten` (see `../scripts/setup.sh`).
+the patches in `../patches/emscripten` (see `../setup.sh`).
 
 Tokio runs as a hosted [`LocalEventLoop`]: a `current_thread` runtime whose
 wait *is* the Node event loop. Where a native runtime parks its thread, the
@@ -33,15 +33,13 @@ accepted connection over `TokioIo` unmodified.
 
 | Route | Shows |
 | --- | --- |
-| `curl http://localhost:8787/spawn` | `tokio::spawn` and awaiting `JoinHandle`s |
-| `curl http://localhost:8787/sleep?ms=100` | `tokio::time::sleep` |
-| `curl http://localhost:8787/timeout` | `tokio::time::timeout` completing and elapsing |
-| `curl http://localhost:8787/channels` | `mpsc` between spawned producers and the handler |
-| `curl http://localhost:8787/mutex` | `tokio::sync::Mutex` shared across tasks |
-| `curl http://localhost:8787/join` | `tokio::join!` over concurrent futures |
+| `curl -N localhost:8787/countdown` | a streamed countdown from 10, one chunk per `tokio::time::sleep` tick |
+| `curl -N localhost:8787/parallel` | 3 `tokio::spawn`ed countdowns at different rates, interleaved through an `mpsc` into one streamed body |
+| `curl localhost:8787/sleep` | `tokio::time::sleep` for 3s |
 
-Each response carries the measured `elapsed_ms`, showing the work overlapping.
-Set `PORT` to change the listening port.
+Start a countdown, then open another URL a few seconds later: both progress,
+since every wait yields to the Node event loop. Set `PORT` to change the
+listening port.
 
 ## Patchset
 

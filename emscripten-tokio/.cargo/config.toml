@@ -1,12 +1,18 @@
 [build]
 target = "wasm32-unknown-emscripten"
 
+# Toolchain from `npm run setup` at the repo root (../.work).
+[env]
+EM_CONFIG = { value = "../.work/emscripten.config", relative = true }
+# exnref exception handling throughout: the C side gets these flags, the
+# prebuilt std is translated at link. V8 rejects a module mixing the two
+# encodings.
+EMCC_CFLAGS = "-fwasm-exceptions -sWASM_LEGACY_EXCEPTIONS=0"
+
 [target.wasm32-unknown-emscripten]
+linker = "../.work/emsdk/upstream/emscripten/emcc"
 rustflags = [
     "-Crelocation-model=static",
-    # exnref exception handling throughout: EMCC_CFLAGS gives the C side
-    # `-fwasm-exceptions -sWASM_LEGACY_EXCEPTIONS=0`, the prebuilt std is
-    # translated at link. V8 rejects a module mixing the two encodings.
     "-Cllvm-args=-wasm-use-legacy-eh=false",
     "-Clink-arg=-sBINARYEN_EXTRA_PASSES=--translate-to-exnref",
     # Tokio's host-driven event loop is unstable.

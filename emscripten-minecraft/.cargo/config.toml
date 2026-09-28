@@ -1,18 +1,37 @@
 [build]
 target = "wasm32-unknown-emscripten"
 
-[target.wasm32-unknown-emscripten]
-rustflags = [
-    "-Crelocation-model=static",
-    # exnref exception handling throughout: EMCC_CFLAGS gives the C side
-    # `-fwasm-exceptions -sWASM_LEGACY_EXCEPTIONS=0`, the prebuilt std is
-    # translated at link. V8 rejects a module mixing the two encodings.
-    "-Cllvm-args=-wasm-use-legacy-eh=false",
-    # Tokio's host-driven LocalEventLoop.
-    "--cfg=tokio_unstable",
-]
-
+# Toolchain from `npm run setup` at the repo root (../.work).
 [env]
+EM_CONFIG = { value = "../.work/emscripten.config", relative = true }
+# exnref exception handling throughout: the C side gets these flags, the
+# prebuilt std is translated at link. V8 rejects a module mixing the two
+# encodings.
+EMCC_CFLAGS = "-fwasm-exceptions -sWASM_LEGACY_EXCEPTIONS=0"
+# Multi-threaded wasm-opt crashes (SIGBUS) on the large Pumpkin module.
+BINARYEN_CORES = "1"
 # rustc's LLVM const emission recurses deeply on pumpkin-data's generated
 # tables and overflows its default compile-thread stack.
 RUST_MIN_STACK = "268435456"
+
+[target.wasm32-unknown-emscripten]
+linker = "../.work/emsdk/upstream/emscripten/emcc"
+rustflags = [
+    "-Crelocation-model=static",
+    "-Cllvm-args=-wasm-use-legacy-eh=false",
+    "-Clink-arg=-sBINARYEN_EXTRA_PASSES=--translate-to-exnref",
+    # Tokio's host-driven event loop is unstable.
+    "--cfg=tokio_unstable",
+    "-Clink-arg=-sENVIRONMENT=node",
+    # Real TCP sockets; the host filesystem for the world (NODERAWFS also
+    # enables NODE_HOST_ENV, so settings come from process.env).
+    "-Clink-arg=-sNODERAWSOCKETS",
+    "-Clink-arg=-sNODERAWFS",
+    "-Clink-arg=-sASSERTIONS=0",
+    "-Clink-arg=-sALLOW_MEMORY_GROWTH=1",
+    "-Clink-arg=-sSTACK_SIZE=8MB",
+    # Keep growth headroom bounded after generation's temporary allocations.
+    "-Clink-arg=-sMEMORY_GROWTH_LINEAR_STEP=2097152",
+    # rustc's target spec passes the deprecated -sWASM_BIGINT.
+    "-Clink-arg=-Wno-deprecated",
+]

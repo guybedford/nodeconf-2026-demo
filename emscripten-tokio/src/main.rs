@@ -5,41 +5,44 @@
 //! the server in flight and Node keeps running while it has tasks.
 
 use bytes::Bytes;
-use http_body_util::Full;
+use http_body_util::channel::Channel;
+use http_body_util::combinators::BoxBody;
+use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{header, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use serde::Serialize;
 use std::convert::Infallible;
-use std::sync::Arc;
+use std::future::Future;
 use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
-use tokio::runtime::{Builder, LocalOptions};
-use tokio::sync::{mpsc, Mutex};
-use tokio::time::{sleep, timeout};
+use tokio::runtime::{Builder, LocalEventLoop, LocalOptions};
+use tokio::sync::mpsc;
+use tokio::time::sleep;
+
+thread_local! {
+    // The host loop drives the runtime after main returns.
+    static EVENT_LOOP: LocalEventLoop = Builder::new_current_thread()
+        .enable_all()
+        .build_hosted_local_event_loop(LocalOptions::default())
+        .expect("failed to build event loop");
+}
 
 const INDEX: &str = "Tokio on Emscripten\n\n\
-GET /spawn      spawn tasks and await their JoinHandles\n\
-GET /sleep?ms=  tokio::time::sleep\n\
-GET /timeout    tokio::time::timeout\n\
-GET /channels   mpsc between spawned producers and the handler\n\
-GET /mutex      tokio::sync::Mutex shared across tasks\n\
-GET /join       tokio::join! over concurrent futures\n";
+GET /countdown   stream a countdown from 10, one tick per second\n\
+GET /parallel    3 spawned countdowns at different rates, interleaved\n\
+GET /sleep       tokio::time::sleep for 3s\n\n\
+Open one, then another a few seconds later: both progress on the one Node thread.\n";
+
+type Body = BoxBody<Bytes, Infallible>;
 
 fn main() {
     let port: u16 = std::env::var("PORT")
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(8787);
-    let rt = Builder::new_current_thread()
-        .enable_all()
-        .build_hosted_local_event_loop(LocalOptions::default())
-        .expect("failed to build event loop");
-    rt.spawn_local(serve(port));
-    // The host loop drives the runtime after main returns.
-    std::mem::forget(rt);
+    EVENT_LOOP.with(|rt| rt.spawn_local(serve(port)));
 }
 
 async fn serve(port: u16) {
@@ -63,170 +66,112 @@ async fn serve(port: u16) {
     }
 }
 
-#[derive(Serialize)]
-struct Demo {
-    description: &'static str,
-    result: String,
-    elapsed_ms: f64,
-}
-
-fn demo(description: &'static str, result: String, start: Instant) -> Demo {
-    Demo {
-        description,
-        result,
-        elapsed_ms: start.elapsed().as_secs_f64() * 1000.0,
-    }
-}
-
-async fn handle(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {
-    let query = req.uri().query().unwrap_or("");
+async fn handle(req: Request<Incoming>) -> Result<Response<Body>, Infallible> {
+    println!("{} {}", req.method(), req.uri());
     Ok(match req.uri().path() {
         "/" => text(StatusCode::OK, INDEX),
-        "/spawn" => json(spawn().await),
-        "/sleep" => json(sleep_for(query).await),
-        "/timeout" => json(timeouts().await),
-        "/channels" => json(channels().await),
-        "/mutex" => json(mutex().await),
-        "/join" => json(join().await),
+        "/countdown" => countdown(),
+        "/parallel" => parallel(),
+        "/sleep" => sleep_for().await,
         _ => text(StatusCode::NOT_FOUND, "not found\n"),
     })
 }
 
-fn text(status: StatusCode, body: &'static str) -> Response<Full<Bytes>> {
+fn text(status: StatusCode, body: &'static str) -> Response<Body> {
+    plain(status, Full::new(Bytes::from_static(body.as_bytes())).boxed())
+}
+
+fn plain(status: StatusCode, body: Body) -> Response<Body> {
     Response::builder()
         .status(status)
-        .header(header::CONTENT_TYPE, "text/plain")
-        .body(Full::new(Bytes::from_static(body.as_bytes())))
+        .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+        .header("x-content-type-options", "nosniff")
+        .body(body)
         .unwrap()
 }
 
-fn json(demo: Demo) -> Response<Full<Bytes>> {
-    let mut body = serde_json::to_string_pretty(&demo).unwrap();
-    body.push('\n');
-    Response::builder()
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Full::new(Bytes::from(body)))
-        .unwrap()
+/// A streamed text response fed by `f` through an `mpsc` of lines.
+fn streamed<F>(f: impl FnOnce(mpsc::Sender<String>) -> F) -> Response<Body>
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    let (lines, mut rx) = mpsc::channel::<String>(16);
+    let (mut body_tx, body) = Channel::<Bytes, Infallible>::new(4);
+    tokio::spawn(f(lines));
+    tokio::spawn(async move {
+        while let Some(line) = rx.recv().await {
+            // The client went away.
+            if body_tx.send_data(Bytes::from(line)).await.is_err() {
+                return;
+            }
+        }
+    });
+    plain(StatusCode::OK, body.boxed())
 }
 
-async fn spawn() -> Demo {
-    let start = Instant::now();
-    let handles: Vec<_> = (1..=3)
-        .map(|i| {
-            tokio::spawn(async move {
-                sleep(Duration::from_millis(10)).await;
-                i * i
-            })
-        })
-        .collect();
-    let mut results = Vec::new();
-    for h in handles {
-        results.push(h.await.unwrap());
+async fn tick(lines: &mpsc::Sender<String>, label: &str, from: u32, interval: Duration) {
+    for i in (1..=from).rev() {
+        sleep(interval).await;
+        if lines.send(format!("{label}{i}\n")).await.is_err() {
+            return;
+        }
     }
-    demo(
-        "3 spawned tasks, each sleeping 10ms, run concurrently",
-        format!("{results:?}"),
-        start,
-    )
 }
 
-async fn sleep_for(query: &str) -> Demo {
-    let ms: u64 = query
-        .split('&')
-        .filter_map(|kv| kv.split_once('='))
-        .find(|(k, _)| *k == "ms")
-        .and_then(|(_, v)| v.parse().ok())
-        .unwrap_or(100);
+fn countdown() -> Response<Body> {
+    let from: u32 = 10;
+    let ms: u64 = 1000;
+    streamed(move |lines| async move {
+        let start = Instant::now();
+        let _ = lines
+            .send(format!("counting down from {from}, one tick every {ms}ms\n"))
+            .await;
+        tick(&lines, "", from, Duration::from_millis(ms)).await;
+        let _ = lines
+            .send(format!("done in {:.0}ms\n", start.elapsed().as_secs_f64() * 1000.0))
+            .await;
+    })
+}
+
+fn parallel() -> Response<Body> {
+    let n: usize = 3;
+    let from: u32 = 10;
+    streamed(move |lines| async move {
+        let start = Instant::now();
+        let _ = lines
+            .send(format!(
+                "{n} spawned countdowns from {from}; task k ticks every k x 1000ms\n"
+            ))
+            .await;
+        let handles: Vec<_> = (1..=n)
+            .map(|k| {
+                let lines = lines.clone();
+                let label = format!("{}: ", (b'A' + k as u8 - 1) as char);
+                tokio::spawn(async move {
+                    tick(&lines, &label, from, Duration::from_millis(k as u64 * 1000)).await;
+                    let _ = lines.send(format!("{label}done\n")).await;
+                })
+            })
+            .collect();
+        for h in handles {
+            let _ = h.await;
+        }
+        let _ = lines
+            .send(format!("all done in {:.0}ms\n", start.elapsed().as_secs_f64() * 1000.0))
+            .await;
+    })
+}
+
+async fn sleep_for() -> Response<Body> {
+    let ms: u64 = 3000;
     let start = Instant::now();
     sleep(Duration::from_millis(ms)).await;
-    demo("tokio::time::sleep", format!("slept {ms}ms"), start)
-}
-
-async fn timeouts() -> Demo {
-    let start = Instant::now();
-    let fast = timeout(Duration::from_millis(50), sleep(Duration::from_millis(10))).await;
-    let slow = timeout(Duration::from_millis(20), sleep(Duration::from_millis(100))).await;
-    demo(
-        "a 10ms operation under a 50ms timeout, then a 100ms one under 20ms",
-        format!("fast: {}, slow: {}", verdict(fast), verdict(slow)),
-        start,
-    )
-}
-
-fn verdict(r: Result<(), tokio::time::error::Elapsed>) -> &'static str {
-    match r {
-        Ok(()) => "completed",
-        Err(_) => "timed out",
-    }
-}
-
-async fn channels() -> Demo {
-    let start = Instant::now();
-    let (tx, mut rx) = mpsc::channel::<u32>(4);
-    for range in [1..=5, 6..=10] {
-        let tx = tx.clone();
-        tokio::spawn(async move {
-            for i in range {
-                sleep(Duration::from_millis(5)).await;
-                let _ = tx.send(i).await;
-            }
-        });
-    }
-    drop(tx);
-    let mut received = Vec::new();
-    while let Some(v) = rx.recv().await {
-        received.push(v);
-    }
-    demo(
-        "two producers send 1..=5 and 6..=10 over an mpsc channel",
-        format!("{received:?}"),
-        start,
-    )
-}
-
-async fn mutex() -> Demo {
-    let start = Instant::now();
-    let counter = Arc::new(Mutex::new(0));
-    let handles: Vec<_> = (0..10)
-        .map(|_| {
-            let counter = counter.clone();
-            tokio::spawn(async move {
-                let mut n = counter.lock().await;
-                sleep(Duration::from_millis(1)).await;
-                *n += 1;
-            })
-        })
-        .collect();
-    for h in handles {
-        h.await.unwrap();
-    }
-    let n = *counter.lock().await;
-    demo(
-        "10 tasks increment a counter while holding an async Mutex",
-        format!("counter = {n}"),
-        start,
-    )
-}
-
-async fn join() -> Demo {
-    let start = Instant::now();
-    let (a, b, c) = tokio::join!(
-        async {
-            sleep(Duration::from_millis(30)).await;
-            "a"
-        },
-        async {
-            sleep(Duration::from_millis(30)).await;
-            "b"
-        },
-        async {
-            sleep(Duration::from_millis(30)).await;
-            "c"
-        },
-    );
-    demo(
-        "three 30ms futures joined; takes ~30ms, not 90",
-        format!("{a}{b}{c}"),
-        start,
+    plain(
+        StatusCode::OK,
+        Full::new(Bytes::from(format!(
+            "slept {ms}ms (measured {:.0}ms)\n",
+            start.elapsed().as_secs_f64() * 1000.0
+        )))
+        .boxed(),
     )
 }
