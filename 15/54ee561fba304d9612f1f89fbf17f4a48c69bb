@@ -1,0 +1,19 @@
+emscripten-tokio/src/main.rs
+  s_1268873164860c::t_36ea9a88cc1bd7 8-10,17,20-30,33-38,45,69-70,73-75,80-81,84,86-89,93-109,112-117,121-133,136-153,155-162,165-166,168-175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "1554ee561fba304d9612f1f89fbf17f4a48c69bb",
+  "prompts": {},
+  "sessions": {
+    "s_1268873164860c": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_f19910defffeA2MWq5AYRoHlP6",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Guy Bedford <gbedford@cloudflare.com>"
+    }
+  }
+}
