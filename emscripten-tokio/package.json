@@ -1,0 +1,8 @@
+{
+  "name": "emscripten-tokio",
+  "private": true,
+  "scripts": {
+    "build": "bash ../scripts/build.sh emscripten-tokio",
+    "start": "node build/emscripten-tokio.js"
+  }
+}

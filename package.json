@@ -1,0 +1,10 @@
+{
+  "name": "nodeconf-2026-demos",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "setup": "bash scripts/setup.sh"
+  }
+}

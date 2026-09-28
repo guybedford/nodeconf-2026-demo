@@ -1,0 +1,38 @@
+[package]
+name = "emscripten-minecraft"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+publish = false
+description = "A Rust Minecraft server (Pumpkin) running under Node.js via Emscripten"
+
+[workspace]
+
+[dependencies]
+tokio = { version = "1", default-features = false, features = ["rt", "macros", "sync", "time", "net", "io-util"] }
+pumpkin = { path = "../.work/pumpkin/crates/pumpkin", default-features = false, features = ["single-threaded"] }
+pumpkin-config = { path = "../.work/pumpkin/crates/pumpkin-config", default-features = false }
+pumpkin-world = { path = "../.work/pumpkin/crates/pumpkin-world", default-features = false, features = ["single-threaded"] }
+rayon = "1.12"
+
+[profile.release]
+opt-level = "s"
+
+# wasm32-unknown-emscripten support pending upstream releases.
+[patch.crates-io]
+# Pending libc@0.2.190
+libc = { git = "https://github.com/rust-lang/libc", branch = "libc-0.2" }
+# LocalEventLoop: the host event loop drives Tokio (tokio-rs/tokio#8484).
+tokio = { git = "https://github.com/guybedford/tokio", tag = "1.53.1-cf.emscripten" }
+tokio-macros = { git = "https://github.com/guybedford/tokio", tag = "1.53.1-cf.emscripten" }
+# Pending https://github.com/tokio-rs/mio/pull/1969
+mio = { git = "https://github.com/guybedford/mio", tag = "1.2.3-cf.emscripten" }
+# rayon-rs/rayon#1323: the single-threaded fallback wakes the host to run spawned jobs.
+rayon = { git = "https://github.com/guybedford/rayon", branch = "fallback-spawn" }
+rayon-core = { git = "https://github.com/guybedford/rayon", branch = "fallback-spawn" }
+# getrandom-backed SystemRandom on emscripten.
+ring = { git = "https://github.com/guybedford/ring", branch = "emscripten" }
+
+# mio's own libc source, unified with the crates.io users above.
+[patch."https://github.com/guybedford/libc"]
+libc = { git = "https://github.com/rust-lang/libc", branch = "libc-0.2" }

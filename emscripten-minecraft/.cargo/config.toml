@@ -1,0 +1,18 @@
+[build]
+target = "wasm32-unknown-emscripten"
+
+[target.wasm32-unknown-emscripten]
+rustflags = [
+    "-Crelocation-model=static",
+    # exnref exception handling throughout: EMCC_CFLAGS gives the C side
+    # `-fwasm-exceptions -sWASM_LEGACY_EXCEPTIONS=0`, the prebuilt std is
+    # translated at link. V8 rejects a module mixing the two encodings.
+    "-Cllvm-args=-wasm-use-legacy-eh=false",
+    # Tokio's host-driven LocalEventLoop.
+    "--cfg=tokio_unstable",
+]
+
+[env]
+# rustc's LLVM const emission recurses deeply on pumpkin-data's generated
+# tables and overflows its default compile-thread stack.
+RUST_MIN_STACK = "268435456"

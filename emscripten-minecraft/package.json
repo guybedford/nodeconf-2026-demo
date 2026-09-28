@@ -1,0 +1,8 @@
+{
+  "name": "emscripten-minecraft",
+  "private": true,
+  "scripts": {
+    "build": "bash ../scripts/build.sh emscripten-minecraft",
+    "start": "node build/emscripten-minecraft.js"
+  }
+}

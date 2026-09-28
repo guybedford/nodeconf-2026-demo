@@ -1,0 +1,21 @@
+[build]
+target = "wasm32-unknown-emscripten"
+
+[target.wasm32-unknown-emscripten]
+rustflags = [
+    "-Crelocation-model=static",
+    # exnref exception handling throughout: EMCC_CFLAGS gives the C side
+    # `-fwasm-exceptions -sWASM_LEGACY_EXCEPTIONS=0`, the prebuilt std is
+    # translated at link. V8 rejects a module mixing the two encodings.
+    "-Cllvm-args=-wasm-use-legacy-eh=false",
+    "-Clink-arg=-sBINARYEN_EXTRA_PASSES=--translate-to-exnref",
+    # Tokio's host-driven event loop is unstable.
+    "--cfg=tokio_unstable",
+    "-Clink-arg=-sENVIRONMENT=node",
+    "-Clink-arg=-sNODERAWSOCKETS",
+    "-Clink-arg=-sNODE_HOST_ENV",
+    "-Clink-arg=-sASSERTIONS=0",
+    "-Clink-arg=-sALLOW_MEMORY_GROWTH=1",
+    # rustc's target spec passes the deprecated -sWASM_BIGINT.
+    "-Clink-arg=-Wno-deprecated",
+]
