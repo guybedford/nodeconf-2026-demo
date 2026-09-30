@@ -1,0 +1,33 @@
+emscripten-tokio/src/main.rs
+  s_1268873164860c::t_36ea9a88cc1bd7 8-10,17,20-30,33-38,45,69-70,73-75,80-81,84,86-89,93-109,112-117,121-133,136-153,155-162,165-166,168-175
+emscripten-minecraft/src/main.rs
+  s_4ce6618540236e::t_30447e32ebbd52 14-18,38-44,87-92
+package.json
+  s_4ce6618540236e::t_8824e860b603d9 8
+setup.sh
+  s_4ce6618540236e::t_a95c3bdc0a1f42 4-11,51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "8a1a35577511acf90b631fc0f22df43619c1fc0c",
+  "prompts": {},
+  "sessions": {
+    "s_1268873164860c": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_f19910defffeA2MWq5AYRoHlP6",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Guy Bedford <gbedford@cloudflare.com>"
+    },
+    "s_4ce6618540236e": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_f0f3e1b8bffeAlbqwHd6pD6kMn",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Guy Bedford <gbedford@cloudflare.com>"
+    }
+  }
+}
